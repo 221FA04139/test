@@ -1,0 +1,21 @@
+app = "finance-manager-nayeem"
+primary_region = "bom"
+
+[build]
+
+[env]
+  FLASK_ENV = "production"
+  APP_VERSION = "1.0.0"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Finance Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ── Top Bar ── -->
+<header class="top-bar" id="top-bar">
+  <div class="top-bar-left">
+    <button class="sidebar-toggle" id="sidebar-toggle" onclick="App.toggleSidebar()" title="Toggle sidebar">☰</button>
+    <div class="logo">
+      <span class="logo-mark">FM</span>
+      <span class="logo-name">Finance Manager</span>
+    </div>
+  </div>
+  <div class="top-bar-center">
+    <span id="top-date" class="top-date"></span>
+  </div>
+  <div class="top-bar-right">
+    <div class="top-stat">
+      <span class="top-stat-label">Today's entries</span>
+      <span class="top-stat-value mono" id="top-entries">—</span>
+    </div>
+    <div class="top-stat">
+      <span class="top-stat-label">Net today</span>
+      <span class="top-stat-value mono" id="top-net">—</span>
+    </div>
+    <button class="btn-icon" onclick="App.exportExcel()" title="Export to Excel">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export
+    </button>
+    <a href="/logout" class="btn-icon btn-logout">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Logout
+    </a>
+  </div>
+</header>
+
+<!-- ── App Layout ── -->
+<div class="app-layout" id="app-layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+
+    <!-- Quick Entry Form -->
+    <div class="sidebar-section">
+      <div class="section-title">Quick Entry</div>
+
+      <div class="type-selector" id="type-selector">
+        <button class="type-btn type-income active" data-type="Income" onclick="Form.selectType('Income')">
+          <span>↑</span> Income
+        </button>
+        <button class="type-btn type-expense" data-type="Expense" onclick="Form.selectType('Expense')">
+          <span>↓</span> Expense
+        </button>
+        <button class="type-btn type-transfer" data-type="Transfer" onclick="Form.selectType('Transfer')">
+          <span>⇄</span> Transfer
+        </button>
+      </div>
+
+      <form id="entry-form" onsubmit="Form.submit(event)">
+
+        <div class="form-row">
+          <label class="form-label">Date</label>
+          <input type="date" id="f-date" name="date" class="form-input" required>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Amount</label>
+          <div class="amount-wrap">
+            <span class="amount-prefix">₹</span>
+            <input type="number" id="f-amount" name="amount" class="form-input amount-input"
+                   placeholder="0.00" step="0.01" min="0.01" inputmode="decimal" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Account</label>
+          <select id="f-account" name="account" class="form-input" required>
+            <option value="">Select account…</option>
+            {% for acc in accounts %}
+            <option value="{{ acc }}">{{ acc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-row hidden" id="f-to-account-row">
+          <label class="form-label">To Account</label>
+          <select id="f-to-account" name="to_account" class="form-input">
+            <option value="">Select destination…</option>
+            {% for acc in accounts %}
+            <option value="{{ acc }}">{{ acc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Category</label>
+          <select id="f-category" name="category" class="form-input" required onchange="Form.onCategoryChange()">
+            <option value="">Select category…</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Sub-Category</label>
+          <select id="f-subcat" name="subcat" class="form-input">
+            <option value="">— select category first —</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Description</label>
+          <input type="text" id="f-description" name="description" class="form-input"
+                 placeholder="Optional note…" autocomplete="off">
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Ref / Voucher</label>
+          <input type="text" id="f-ref" name="ref" class="form-input"
+                 placeholder="Optional reference…" autocomplete="off">
+        </div>
+
+        <button type="submit" class="btn-save" id="save-btn">
+          <span id="save-spinner" class="spinner hidden"></span>
+          Save Entry
+          <small class="shortcut-hint">Ctrl+Enter</small>
+        </button>
+
+      </form>
+    </div>
+
+    <!-- Opening Balances (collapsible) -->
+    <details class="sidebar-section ob-section" id="ob-section">
+      <summary class="section-title ob-toggle">
+        Opening Balances
+        <span class="ob-chevron">▾</span>
+      </summary>
+      <div class="ob-note">Set once. Updates running balance.</div>
+      <form id="ob-form" onsubmit="Form.saveOpeningBalances(event)">
+        {% for acc in accounts %}
+        <div class="form-row ob-row">
+          <label class="form-label ob-label">{{ acc }}</label>
+          <div class="amount-wrap">
+            <span class="amount-prefix">₹</span>
+            <input type="number" class="form-input ob-input" data-account="{{ acc }}"
+                   step="0.01" placeholder="0.00" value="0">
+          </div>
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn-save btn-ob-save">Save Balances</button>
+      </form>
+    </details>
+
+  </aside>
+
+  <!-- ── Main Content ── -->
+  <main class="main-content" id="main-content">
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="dashboard" onclick="App.switchTab('dashboard')">Dashboard</button>
+      <button class="tab-btn" data-tab="transactions" onclick="App.switchTab('transactions')">Transactions</button>
+      <button class="tab-btn" data-tab="accounts" onclick="App.switchTab('accounts')">Accounts</button>
+      <button class="tab-btn" data-tab="reports" onclick="App.switchTab('reports')">Reports</button>
+      <button class="tab-btn" data-tab="settings" onclick="App.switchTab('settings')">Settings</button>
+    </nav>
+
+    <!-- ── TAB: Dashboard ── -->
+    <div class="tab-panel active" id="tab-dashboard">
+
+      <div class="kpi-grid" id="kpi-alltime">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Income</div>
+          <div class="kpi-value green mono" id="kpi-income">—</div>
+          <div class="kpi-sub">All time</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Expense</div>
+          <div class="kpi-value red mono" id="kpi-expense">—</div>
+          <div class="kpi-sub">All time</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Net Cash Flow</div>
+          <div class="kpi-value mono" id="kpi-net">—</div>
+          <div class="kpi-sub">All time</div>
+        </div>
+      </div>
+
+      <div class="kpi-grid kpi-grid-secondary">
+        <div class="kpi-card">
+          <div class="kpi-label">This Month Income</div>
+          <div class="kpi-value green mono" id="kpi-m-income">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">This Month Expense</div>
+          <div class="kpi-value red mono" id="kpi-m-expense">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Transactions Today</div>
+          <div class="kpi-value accent mono" id="kpi-today">—</div>
+        </div>
+      </div>
+
+      <div class="section-heading">Account Balances</div>
+      <div class="account-grid" id="account-grid">
+        <div class="loading-placeholder">Loading accounts…</div>
+      </div>
+
+      <div class="section-heading">Category P&amp;L</div>
+      <div class="cat-grid" id="cat-grid">
+        <div class="loading-placeholder">Loading categories…</div>
+      </div>
+
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">Monthly Trend — Last 12 Months</div>
+          <div class="chart-wrap">
+            <canvas id="chart-monthly"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Expense by Category</div>
+          <div class="chart-wrap chart-donut-wrap">
+            <canvas id="chart-donut"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── TAB: Transactions ── -->
+    <div class="tab-panel hidden" id="tab-transactions">
+
+      <div class="tx-toolbar">
+        <input type="text" id="tx-search" class="form-input toolbar-input"
+               placeholder="Search description, ref, account…" oninput="Transactions.onSearchChange()">
+        <select class="form-input toolbar-select" id="tx-filter-type" onchange="Transactions.load(1)">
+          <option value="">All types</option>
+          <option value="Income">Income</option>
+          <option value="Expense">Expense</option>
+          <option value="Transfer">Transfer</option>
+        </select>
+        <select class="form-input toolbar-select" id="tx-filter-account" onchange="Transactions.load(1)">
+          <option value="">All accounts</option>
+          {% for acc in accounts %}
+          <option value="{{ acc }}">{{ acc }}</option>
+          {% endfor %}
+        </select>
+        <select class="form-input toolbar-select" id="tx-filter-category" onchange="Transactions.load(1)">
+          <option value="">All categories</option>
+          {% for cat in categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+          {% endfor %}
+        </select>
+        <input type="month" class="form-input toolbar-input" id="tx-filter-month" onchange="Transactions.load(1)">
+        <input type="date" class="form-input toolbar-input" id="tx-filter-from" onchange="Transactions.load(1)" title="From date">
+        <input type="date" class="form-input toolbar-input" id="tx-filter-to" onchange="Transactions.load(1)" title="To date">
+        <button class="btn-secondary" onclick="Transactions.clearFilters()">Clear</button>
+        <span class="tx-count" id="tx-count"></span>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table" id="tx-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Account</th>
+              <th>Category</th>
+              <th>Sub-Cat</th>
+              <th>Description</th>
+              <th class="num-col">Amount</th>
+              <th>Ref</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tx-tbody">
+            <tr><td colspan="9" class="loading-placeholder">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination" id="tx-pagination"></div>
+
+    </div>
+
+    <!-- ── TAB: Accounts ── -->
+    <div class="tab-panel hidden" id="tab-accounts">
+      <div class="section-heading">All Accounts</div>
+      <div id="accounts-list">
+        <div class="loading-placeholder">Loading…</div>
+      </div>
+    </div>
+
+    <!-- ── TAB: Reports ── -->
+    <div class="tab-panel hidden" id="tab-reports">
+      <div class="report-controls">
+        <div class="date-shortcuts">
+          <button class="btn-chip" onclick="Reports.setRange('this-month')">This Month</button>
+          <button class="btn-chip" onclick="Reports.setRange('last-month')">Last Month</button>
+          <button class="btn-chip" onclick="Reports.setRange('this-quarter')">This Quarter</button>
+          <button class="btn-chip" onclick="Reports.setRange('this-year')">This Year</button>
+        </div>
+        <div class="report-date-row">
+          <div class="form-row">
+            <label class="form-label">From Date</label>
+            <input type="date" id="rpt-from" class="form-input">
+          </div>
+          <div class="form-row">
+            <label class="form-label">To Date</label>
+            <input type="date" id="rpt-to" class="form-input">
+          </div>
+          <button class="btn-primary" onclick="Reports.generate()">Generate Report</button>
+          <button class="btn-secondary" id="rpt-export-btn" onclick="Reports.exportExcel()" style="display:none">Export Excel</button>
+        </div>
+      </div>
+      <div id="report-output"></div>
+    </div>
+
+    <!-- ── TAB: Settings ── -->
+    <div class="tab-panel hidden" id="tab-settings">
+
+      <div class="settings-grid">
+
+        <div class="settings-card">
+          <h3>Change Password</h3>
+          <form onsubmit="Settings.changePassword(event)">
+            <div class="form-row">
+              <label class="form-label">Current Password</label>
+              <input type="password" id="s-cur-pw" class="form-input" required>
+            </div>
+            <div class="form-row">
+              <label class="form-label">New Password</label>
+              <input type="password" id="s-new-pw" class="form-input" required minlength="6">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Confirm New Password</label>
+              <input type="password" id="s-confirm-pw" class="form-input" required>
+            </div>
+            <button type="submit" class="btn-primary">Update Password</button>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>Opening Balances</h3>
+          <p class="settings-note">These are the starting balances for each account. Set once when you begin using the app.</p>
+          <form id="s-ob-form" onsubmit="Settings.saveOB(event)">
+            {% for acc in accounts %}
+            <div class="form-row ob-row">
+              <label class="form-label ob-label">{{ acc }}</label>
+              <div class="amount-wrap">
+                <span class="amount-prefix">₹</span>
+                <input type="number" class="form-input s-ob-input" data-account="{{ acc }}"
+                       step="0.01" placeholder="0.00">
+              </div>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn-primary">Save Opening Balances</button>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>Add Category</h3>
+          <form onsubmit="Settings.addCategory(event)">
+            <div class="form-row">
+              <label class="form-label">Category Name</label>
+              <input type="text" id="s-cat-name" class="form-input" required placeholder="New category name">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Parent Category (optional)</label>
+              <select id="s-cat-parent" class="form-input">
+                <option value="">— Top level category —</option>
+              </select>
+            </div>
+            <button type="submit" class="btn-primary">Add Category</button>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>About</h3>
+          <div class="about-row"><span>Version</span><span class="mono">{{ version }}</span></div>
+          <div class="about-row"><span>Database</span><span id="db-status" class="mono">Checking…</span></div>
+          <div class="about-row"><span>Logged in as</span><span class="mono">{{ user.username }}</span></div>
+          <div class="about-row"><span>Role</span><span class="mono">{{ user.role }}</span></div>
+          <div style="margin-top:1rem">
+            <button class="btn-secondary" onclick="App.exportCsv()">Export CSV</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Mobile bottom nav -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="bnav-btn active" data-tab="dashboard" onclick="App.switchTab('dashboard')">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    <span>Dashboard</span>
+  </button>
+  <button class="bnav-btn" data-tab="transactions" onclick="App.switchTab('transactions')">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    <span>Txns</span>
+  </button>
+  <button class="bnav-btn" data-tab="accounts" onclick="App.switchTab('accounts')">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+    <span>Accounts</span>
+  </button>
+  <button class="bnav-btn" data-tab="reports" onclick="App.switchTab('reports')">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    <span>Reports</span>
+  </button>
+  <button class="bnav-btn" data-tab="settings" onclick="App.switchTab('settings')">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M12 2a10 10 0 0 1 0 20"/></svg>
+    <span>Settings</span>
+  </button>
+</nav>
+
+<!-- Toast container -->
+<div id="toast-container" aria-live="polite"></div>
+
+<!-- Confirm dialog -->
+<div class="confirm-overlay hidden" id="confirm-overlay">
+  <div class="confirm-dialog">
+    <p id="confirm-msg">Are you sure?</p>
+    <div class="confirm-btns">
+      <button class="btn-secondary" onclick="App.confirmCancel()">Cancel</button>
+      <button class="btn-danger" id="confirm-ok" onclick="App.confirmOk()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Inject server-side data for JS
+  window._CATEGORIES = {{ categories | tojson }};
+  window._ACCOUNTS = {{ accounts | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/form.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
