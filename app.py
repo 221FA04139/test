@@ -19,6 +19,8 @@ from flask_login import (
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 from database import (
     db, User, Transaction, OpeningBalance, Category, AuditLog,
     ACCOUNTS, CATEGORIES, seed_database,
@@ -27,6 +29,7 @@ from database import (
 # ── App setup ─────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 database_url = os.environ.get("DATABASE_URL", "")
